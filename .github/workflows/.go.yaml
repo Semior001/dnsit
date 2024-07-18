@@ -72,7 +72,7 @@ jobs:
 
       - name: curl updater
         run:
-          curl --max-time 300 https://upd.semior.dev/update/migbt/${{secrets.UPDATER_TOKEN}}
+          curl --max-time 300 https://upd.semior.dev/update/dnsit/${{secrets.UPDATER_TOKEN}}
 
       - name: cleanup old images
         if: ${{ github.ref == 'refs/heads/main' }}

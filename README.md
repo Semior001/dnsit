@@ -6,6 +6,10 @@ simple as that dns server, accepts /etc/hosts like config for resolving A record
 go install github.com/Semior001/dnsit@latest
 ```
 
+```bash
+docker run --rm -it -p 53:53/udp -v ./my-config-file.conf:/srv/config ghcr.io/semior001/dnsit:latest
+```
+
 ## usage
 ```
 Usage:

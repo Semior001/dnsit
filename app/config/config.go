@@ -48,6 +48,7 @@ func (s *SectionConfig) UnmarshalYAML(v *yaml.Node) error {
 		return fmt.Errorf("parse CIDR: %w", err)
 	}
 
+	ipNet.IP = ipNet.IP.To4()
 	s.From = ipNet
 	return nil
 }
@@ -94,7 +95,7 @@ func Parse(file io.Reader) (result Config, err error) {
 				return Config{}, fmt.Errorf("invalid IP address at line %d: %s", idx, fields[0])
 			}
 
-			alias := Alias{IP: ip, Hostnames: filterOutComment(fields[1:])}
+			alias := Alias{IP: ip.To4(), Hostnames: filterOutComment(fields[1:])}
 
 			for hostIdx, hostname := range alias.Hostnames {
 				if !strings.HasSuffix(hostname, ".") {

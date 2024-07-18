@@ -5,6 +5,7 @@ import (
 	"context"
 	"log"
 	"net"
+	"time"
 
 	"github.com/Semior001/dnsit/app/config"
 	"github.com/miekg/dns"
@@ -14,6 +15,7 @@ import (
 type Server struct {
 	Addr     string
 	Config   config.Config
+	TTL      time.Duration
 	Upstream string
 
 	srv *dns.Server
@@ -50,17 +52,8 @@ func (s *Server) handle(w dns.ResponseWriter, req *dns.Msg) {
 		return
 	}
 
-	msg := &dns.Msg{
-		Question: req.Question,
-		MsgHdr: dns.MsgHdr{
-			Id:                 req.Id,
-			Response:           true,
-			Opcode:             req.Opcode,
-			Authoritative:      true,
-			RecursionDesired:   req.RecursionDesired,
-			RecursionAvailable: true,
-		},
-	}
+	msg := &dns.Msg{}
+	msg.SetReply(req)
 
 	for _, q := range req.Question {
 		log.Printf("[INFO][%d] query for %s from %s", req.Id, q.Name, srcAddr.IP)
@@ -78,9 +71,9 @@ func (s *Server) handle(w dns.ResponseWriter, req *dns.Msg) {
 					A: alias.IP,
 					Hdr: dns.RR_Header{
 						Name:   q.Name,
-						Rrtype: q.Qtype,
-						Class:  q.Qclass,
-						Ttl:    60,
+						Rrtype: dns.TypeA,
+						Class:  dns.ClassINET,
+						Ttl:    uint32(s.TTL.Seconds()),
 					},
 				})
 				break

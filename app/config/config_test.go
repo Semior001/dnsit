@@ -20,15 +20,15 @@ func TestParse(t *testing.T) {
 	expected := Config{Sections: []Section{
 		{
 			Aliases: []Alias{
-				{IP: net.IPv4(192, 168, 174, 1), Hostnames: []string{"some.domain.com.", "some.domain."}},
-				{IP: net.IPv4(192, 168, 174, 2), Hostnames: []string{"some.other.domain.com.", "some.other.domain.", "some.other."}},
+				{IP: net.IPv4(192, 168, 174, 1).To4(), Hostnames: []string{"some.domain.com.", "some.domain."}},
+				{IP: net.IPv4(192, 168, 174, 2).To4(), Hostnames: []string{"some.other.domain.com.", "some.other.domain.", "some.other."}},
 			},
 			SectionConfig: SectionConfig{From: cidr(t, "192.168.174.0/24")},
 		},
 		{
 			Aliases: []Alias{
-				{IP: net.IPv4(100, 10, 10, 3), Hostnames: []string{"foo.bar."}},
-				{IP: net.IPv4(100, 8, 1, 1), Hostnames: []string{"bar.foo."}},
+				{IP: net.IPv4(100, 10, 10, 3).To4(), Hostnames: []string{"foo.bar."}},
+				{IP: net.IPv4(100, 8, 1, 1).To4(), Hostnames: []string{"bar.foo."}},
 			},
 			SectionConfig: SectionConfig{From: cidr(t, "100.10.10.1/32")},
 		},
@@ -40,5 +40,6 @@ func TestParse(t *testing.T) {
 func cidr(t *testing.T, s string) *net.IPNet {
 	_, ipNet, err := net.ParseCIDR(s)
 	require.NoError(t, err)
+	ipNet.IP = ipNet.IP.To4()
 	return ipNet
 }

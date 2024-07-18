@@ -1,3 +1,4 @@
+// Package ns contains the name server implementation.
 package ns
 
 import (

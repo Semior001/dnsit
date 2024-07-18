@@ -32,4 +32,6 @@ RUN apk add --no-cache --update tzdata && \
 
 COPY --from=builder /go/build/dnsit /usr/bin/dnsit
 
+ENV CONFIG=/srv/config
+
 ENTRYPOINT ["/usr/bin/dnsit"]

@@ -50,14 +50,17 @@ func (s *Server) handle(w dns.ResponseWriter, req *dns.Msg) {
 		return
 	}
 
-	msg := &dns.Msg{MsgHdr: dns.MsgHdr{
-		Id:                 req.Id,
-		Response:           true,
-		Opcode:             req.Opcode,
-		Authoritative:      true,
-		RecursionDesired:   req.RecursionDesired,
-		RecursionAvailable: true,
-	}}
+	msg := &dns.Msg{
+		Question: req.Question,
+		MsgHdr: dns.MsgHdr{
+			Id:                 req.Id,
+			Response:           true,
+			Opcode:             req.Opcode,
+			Authoritative:      true,
+			RecursionDesired:   req.RecursionDesired,
+			RecursionAvailable: true,
+		},
+	}
 
 	for _, q := range req.Question {
 		log.Printf("[INFO][%d] query for %s from %s", req.Id, q.Name, srcAddr.IP)

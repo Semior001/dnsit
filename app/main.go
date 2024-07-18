@@ -10,6 +10,7 @@ import (
 	"os/signal"
 	"runtime/debug"
 	"syscall"
+	"time"
 
 	"github.com/Semior001/dnsit/app/config"
 	"github.com/Semior001/dnsit/app/ns"
@@ -18,10 +19,11 @@ import (
 )
 
 var opts struct {
-	Addr     string `long:"addr"     env:"ADDR"     description:"Address to listen on"           default:":53"`
-	Upstream string `long:"upstream" env:"UPSTREAM" description:"Upstream DNS server address"`
-	Config   string `long:"config"   env:"CONFIG"   description:"Path to the configuration file" required:"true"`
-	Debug    bool   `long:"debug"    env:"DEBUG"    description:"Enable debug mode"`
+	Addr     string        `long:"addr"     env:"ADDR"     description:"Address to listen on"           default:":53"`
+	Upstream string        `long:"upstream" env:"UPSTREAM" description:"Upstream DNS server address"`
+	TTL      time.Duration `long:"ttl"      env:"TTL"      description:"TTL for DNS records"            default:"5m"`
+	Config   string        `long:"config"   env:"CONFIG"   description:"Path to the configuration file" required:"true"`
+	Debug    bool          `long:"debug"    env:"DEBUG"    description:"Enable debug mode"`
 }
 
 var version = "unknown"
@@ -77,6 +79,7 @@ func run(ctx context.Context) error {
 	srv := &ns.Server{
 		Addr:     opts.Addr,
 		Upstream: opts.Upstream,
+		TTL:      opts.TTL,
 		Config:   cfg,
 	}
 

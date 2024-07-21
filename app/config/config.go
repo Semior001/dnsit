@@ -16,6 +16,20 @@ type Config struct {
 	Sections []Section
 }
 
+// String returns the string representation of the configuration.
+func (c Config) String() string {
+	result := &strings.Builder{}
+	_, _ = result.WriteString("{")
+	for idx, s := range c.Sections {
+		_, _ = fmt.Fprintf(result, "%s: %d", s.SectionConfig.From, len(s.Aliases))
+		if idx < len(c.Sections)-1 {
+			_, _ = result.WriteString(", ")
+		}
+	}
+	_, _ = result.WriteString("}")
+	return result.String()
+}
+
 // Section represents a section of the configuration.
 type Section struct {
 	Aliases []Alias
@@ -128,3 +142,14 @@ func filterOutComment(ls []string) []string {
 	}
 	return result
 }
+
+// Decoder is a configuration decoder.
+type Decoder interface {
+	Decode(io.Reader) (Config, error)
+}
+
+// DecoderFunc is an adapter to use an ordinary function as a Decoder.
+type DecoderFunc func(io.Reader) (Config, error)
+
+// Decode calls f(r).
+func (f DecoderFunc) Decode(r io.Reader) (Config, error) { return f(r) }

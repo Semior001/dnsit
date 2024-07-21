@@ -16,14 +16,19 @@ import (
 	"github.com/Semior001/dnsit/app/ns"
 	"github.com/hashicorp/logutils"
 	"github.com/jessevdk/go-flags"
+	"golang.org/x/sync/errgroup"
 )
 
 var opts struct {
-	Addr     string        `long:"addr"     env:"ADDR"     description:"Address to listen on"           default:":53"`
-	Upstream string        `long:"upstream" env:"UPSTREAM" description:"Upstream DNS server address"`
-	TTL      time.Duration `long:"ttl"      env:"TTL"      description:"TTL for DNS records"            default:"5m"`
-	Config   string        `long:"config"   env:"CONFIG"   description:"Path to the configuration file" required:"true"`
-	Debug    bool          `long:"debug"    env:"DEBUG"    description:"Enable debug mode"`
+	Addr     string        `long:"addr"           env:"ADDR"           description:"Address to listen on"                 default:":53"`
+	Upstream string        `long:"upstream"       env:"UPSTREAM"       description:"Upstream DNS server address"`
+	TTL      time.Duration `long:"ttl"            env:"TTL"            description:"TTL for DNS records"                  default:"5m"`
+	Config   struct {
+		Path          string        `long:"path"           env:"PATH"           description:"path to the configuration file"       required:"true"`
+		Delay         time.Duration `long:"delay"          env:"DELAY"          description:"Delay before applying changes"        default:"10s"`
+		CheckInterval time.Duration `long:"check-interval" env:"CHECK_INTERVAL" description:"Interval to check for config changes" default:"3s"`
+	} `group:"config" namespace:"config" env-namespace:"CONFIG"`
+	Debug bool `long:"debug"          env:"DEBUG"          description:"Enable debug mode"`
 }
 
 var version = "unknown"
@@ -63,31 +68,30 @@ func main() {
 }
 
 func run(ctx context.Context) error {
-	f, err := os.Open(opts.Config)
-	if err != nil {
-		return fmt.Errorf("open config file: %w", err)
-	}
-	defer f.Close()
+	srv := ns.NewServer(opts.Addr, opts.TTL, opts.Upstream)
 
-	cfg, err := config.Parse(f)
-	if err != nil {
-		return fmt.Errorf("parse config: %w", err)
-	}
-
-	log.Printf("[INFO] parsed config with %d sections", len(cfg.Sections))
-
-	srv := &ns.Server{
-		Addr:     opts.Addr,
-		Upstream: opts.Upstream,
-		TTL:      opts.TTL,
-		Config:   cfg,
+	checker := &config.Checker{
+		FileName:      opts.Config.Path,
+		CheckInterval: opts.Config.CheckInterval,
+		Delay:         opts.Config.Delay,
+		Decoder:       config.DecoderFunc(config.Parse),
+		UpdateFn:      srv.SetConfig,
 	}
 
-	if err = srv.Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
-		return fmt.Errorf("run server: %w", err)
-	}
-
-	return nil
+	ewg, ctx := errgroup.WithContext(ctx)
+	ewg.Go(func() error {
+		if err := srv.Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
+			return fmt.Errorf("run server: %w", err)
+		}
+		return nil
+	})
+	ewg.Go(func() error {
+		if err := checker.Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
+			return fmt.Errorf("run checker: %w", err)
+		}
+		return nil
+	})
+	return ewg.Wait()
 }
 
 func setupLog(debug bool) {

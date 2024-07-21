@@ -5,9 +5,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"runtime/debug"
 	"syscall"
 	"time"
@@ -17,6 +19,7 @@ import (
 	"github.com/hashicorp/logutils"
 	"github.com/jessevdk/go-flags"
 	"golang.org/x/sync/errgroup"
+	"gopkg.in/natefinch/lumberjack.v2"
 )
 
 var opts struct {
@@ -28,7 +31,11 @@ var opts struct {
 		Delay         time.Duration `long:"delay"          env:"DELAY"          description:"Delay before applying changes"        default:"10s"`
 		CheckInterval time.Duration `long:"check-interval" env:"CHECK_INTERVAL" description:"Interval to check for config changes" default:"3s"`
 	} `group:"config" namespace:"config" env-namespace:"CONFIG"`
-	Debug bool `long:"debug"          env:"DEBUG"          description:"Enable debug mode"`
+
+	Log struct {
+		File  string `long:"log-file"       env:"LOG_FILE"       description:"Log file path, empty for stdout"`
+		Debug bool   `long:"debug"          env:"DEBUG"          description:"Enable debug mode"`
+	} `group:"log" namespace:"log" env-namespace:"LOG"`
 }
 
 var version = "unknown"
@@ -60,7 +67,7 @@ func main() {
 		log.Fatalf("failed to parse flags: %v", err)
 	}
 
-	setupLog(opts.Debug)
+	setupLog()
 
 	if err := run(ctx); err != nil {
 		log.Fatalf("failed to run: %v", err)
@@ -94,7 +101,7 @@ func run(ctx context.Context) error {
 	return ewg.Wait()
 }
 
-func setupLog(debug bool) {
+func setupLog() {
 	filter := &logutils.LevelFilter{
 		Levels:   []logutils.LogLevel{"DEBUG", "INFO", "WARN", "ERROR"},
 		MinLevel: "INFO",
@@ -103,9 +110,20 @@ func setupLog(debug bool) {
 
 	logFlags := log.Ldate | log.Ltime
 
-	if debug {
+	if opts.Log.Debug {
 		logFlags = log.Ldate | log.Ltime | log.Lmicroseconds | log.Lshortfile
 		filter.MinLevel = "DEBUG"
+	}
+
+	if opts.Log.File != "" {
+		lj := &lumberjack.Logger{
+			Filename:   filepath.Clean(opts.Log.File),
+			MaxSize:    100, // 100 MB
+			MaxAge:     28,  // 28 days
+			MaxBackups: 3,
+			LocalTime:  true,
+		}
+		filter.Writer = io.MultiWriter(os.Stderr, lj)
 	}
 
 	log.SetFlags(logFlags)

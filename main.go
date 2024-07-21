@@ -27,13 +27,13 @@ var opts struct {
 	Upstream string        `long:"upstream"       env:"UPSTREAM"       description:"Upstream DNS server address"`
 	TTL      time.Duration `long:"ttl"            env:"TTL"            description:"TTL for DNS records"                  default:"5m"`
 	Config   struct {
-		Path          string        `long:"path"           env:"PATH"           description:"path to the configuration file"       required:"true"`
+		Path          string        `long:"path"           env:"PATH"           description:"Path to the configuration file"       required:"true"`
 		Delay         time.Duration `long:"delay"          env:"DELAY"          description:"Delay before applying changes"        default:"10s"`
 		CheckInterval time.Duration `long:"check-interval" env:"CHECK_INTERVAL" description:"Interval to check for config changes" default:"3s"`
 	} `group:"config" namespace:"config" env-namespace:"CONFIG"`
 
 	Log struct {
-		File  string `long:"log-file"       env:"LOG_FILE"       description:"Log file path, empty for stdout"`
+		Path  string `long:"path"           env:"PATH"           description:"Log file path, empty for stdout"`
 		Debug bool   `long:"debug"          env:"DEBUG"          description:"Enable debug mode"`
 	} `group:"log" namespace:"log" env-namespace:"LOG"`
 }
@@ -115,9 +115,9 @@ func setupLog() {
 		filter.MinLevel = "DEBUG"
 	}
 
-	if opts.Log.File != "" {
+	if opts.Log.Path != "" {
 		lj := &lumberjack.Logger{
-			Filename:   filepath.Clean(opts.Log.File),
+			Filename:   filepath.Clean(opts.Log.Path),
 			MaxSize:    100, // 100 MB
 			MaxAge:     28,  // 28 days
 			MaxBackups: 3,

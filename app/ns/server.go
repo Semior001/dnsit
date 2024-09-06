@@ -107,14 +107,14 @@ func (s *Server) matchAnswer(msg *dns.Msg, req *dns.Msg, ip net.IP) {
 		log.Printf("[INFO][%d] query for %s from %s", req.Id, q.Name, ip)
 		for secIdx, sec := range s.cfg.Sections {
 			matchedByCIDR := s.matchesCIDR(sec, ip)
-			log.Printf("[DEBUG][%d] %2d | matched CIDR: %v", req.Id, secIdx, matchedByCIDR)
+			log.Printf("[DEBUG][%d] %2d | %18s | matched CIDR: %v", req.Id, secIdx, sec.From, matchedByCIDR)
 			if matchedByCIDR {
 				answer(sec, q)
 				continue
 			}
 
 			matchedByTS := s.matchesTS(req, sec, ip)
-			log.Printf("[DEBUG][%d] %2d | matched TSTG: %v", req.Id, secIdx, matchedByTS)
+			log.Printf("[DEBUG][%d] %2d | %18v | matched TSTG: %v", req.Id, secIdx, sec.TSTag, matchedByTS)
 
 			if matchedByTS {
 				answer(sec, q)
@@ -134,6 +134,8 @@ func (s *Server) matchesTS(req *dns.Msg, sec config.Section, ip net.IP) bool {
 		log.Printf("[WARN][%d] failed to get tags of %s: %v", req.Id, ip, err)
 		return false
 	}
+
+	log.Printf("[DEBUG][%d] tags of %s: %v", req.Id, ip, tags)
 
 	for _, tag := range tags {
 		if _, ok := sec.TSTag[tag]; ok {

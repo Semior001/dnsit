@@ -91,7 +91,6 @@ func (s *Server) handle(w dns.ResponseWriter, req *dns.Msg) {
 	}
 
 	log.Printf("[INFO][%d] answering with %d IPs", req.Id, len(msg.Answer))
-	log.Printf("[DEBUG][%d] answering with\n%s", req.Id, msg)
 	if err := w.WriteMsg(msg); err != nil {
 		log.Printf("[WARN][%d] failed to write message: %v", req.Id, err)
 	}

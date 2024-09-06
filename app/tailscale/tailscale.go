@@ -8,6 +8,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"sort"
 	"sync"
 	"time"
 )
@@ -25,6 +26,7 @@ type Interface interface {
 
 // Device represents a device in the TSTag network.
 type Device struct {
+	Name      string
 	Addresses []net.IP
 	Tags      []string
 }
@@ -35,11 +37,9 @@ type Client struct {
 	Tailnet string
 	Token   string
 
-	devices  []Device
-	deviceMu sync.RWMutex
-
-	lastRefresh time.Time
-	refreshMu   sync.RWMutex
+	ts  time.Time
+	val State
+	mu  sync.RWMutex
 }
 
 // Run starts the client and refreshes the data from the TSTag service.
@@ -67,10 +67,10 @@ func (c *Client) Run(ctx context.Context, refreshInterval time.Duration) {
 
 // GetTags returns the tags for the given device that is identified by the IP address.
 func (c *Client) GetTags(ip net.IP) (tags []string, err error) {
-	c.deviceMu.RLock()
-	defer c.deviceMu.RUnlock()
+	c.mu.RLock()
+	defer c.mu.RUnlock()
 
-	for _, d := range c.devices {
+	for _, d := range c.val.Devices {
 		for _, a := range d.Addresses {
 			if a.Equal(ip) {
 				return d.Tags, nil
@@ -83,16 +83,11 @@ func (c *Client) GetTags(ip net.IP) (tags []string, err error) {
 
 // Refresh refreshes the data from the tailscale.
 func (c *Client) Refresh(ctx context.Context) error {
-	c.refreshMu.RLock()
-	if time.Since(c.lastRefresh) < 5*time.Second {
-		// do not refresh too often
-		c.refreshMu.RUnlock()
+	if last := c.lastModified(); time.Since(last) < 5*time.Second {
+		// do not refresh too often 
+		log.Printf("[DEBUG] supressed refresh, when the last one was less than 5 sec ago: %s", last)
 		return nil
 	}
-	c.refreshMu.RUnlock()
-	c.refreshMu.Lock()
-	defer c.refreshMu.Unlock()
-	c.lastRefresh = time.Now()
 
 	log.Printf("[DEBUG][tailscale] refreshing devices")
 
@@ -113,6 +108,7 @@ func (c *Client) Refresh(ctx context.Context) error {
 
 	var body struct {
 		Devices []struct {
+			Name      string   `json:"name"`
 			Addresses []string `json:"addresses"`
 			Tags      []string `json:"tags"`
 		} `json:"devices"`
@@ -121,7 +117,7 @@ func (c *Client) Refresh(ctx context.Context) error {
 		return fmt.Errorf("decode response: %w", err)
 	}
 
-	devices := make([]Device, 0, len(body.Devices))
+	st := State{Devices: make([]Device, 0, len(body.Devices))}
 	for _, d := range body.Devices {
 		addresses := make([]net.IP, 0, len(d.Addresses))
 		for _, a := range d.Addresses {
@@ -132,32 +128,54 @@ func (c *Client) Refresh(ctx context.Context) error {
 			}
 			addresses = append(addresses, ip)
 		}
-		devices = append(devices, Device{
+		st.Devices = append(st.Devices, Device{
+			Name:      d.Name,
 			Addresses: addresses,
 			Tags:      d.Tags,
 		})
 	}
 
-	c.deviceMu.RLock()
-	if !equal(c.devices, devices) {
-		log.Printf("[DEBUG][tailscale] updating devices, old: %d, new: %d", len(c.devices), len(devices))
-		c.deviceMu.RUnlock()
-		c.deviceMu.Lock()
-		c.devices = devices
-		c.deviceMu.Unlock()
-		return nil
+	if !c.state().Equal(st) {
+		c.mu.Lock()
+		defer c.mu.Unlock()
+		c.val = st
 	}
-	c.deviceMu.RUnlock()
+
 	return nil
 }
 
-func equal(a, b []Device) bool {
-	if len(a) != len(b) {
+func (c *Client) lastModified() time.Time {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.ts
+}
+
+func (c *Client) state() State {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.val
+}
+
+// State specifies the current state of the tailnet.
+type State struct {
+	Devices []Device
+}
+
+// Equal returns true if two states are equal.
+func (s State) Equal(other State) bool {
+	sort.Slice(s.Devices, func(i, j int) bool {
+		return s.Devices[i].Name > s.Devices[j].Name
+	})
+	sort.Slice(other.Devices, func(i, j int) bool {
+		return other.Devices[i].Name > other.Devices[j].Name
+	})
+
+	if len(other.Devices) != len(s.Devices) {
 		return false
 	}
 
-	for i := range a {
-		if !equalDevice(a[i], b[i]) {
+	for i := range s.Devices {
+		if !s.Devices[i].Equal(other.Devices[i]) {
 			return false
 		}
 	}
@@ -165,23 +183,33 @@ func equal(a, b []Device) bool {
 	return true
 }
 
-func equalDevice(a, b Device) bool {
-	if len(a.Addresses) != len(b.Addresses) {
+// Equal returns true if two devices are identical.
+func (d Device) Equal(other Device) bool {
+	if d.Name != other.Name {
 		return false
 	}
 
-	for i := range a.Addresses {
-		if !a.Addresses[i].Equal(b.Addresses[i]) {
+	sort.Strings(d.Tags)
+	sort.Strings(other.Tags)
+	sort.Slice(d.Addresses, func(i, j int) bool {
+		return d.Addresses[i].String() > d.Addresses[j].String()
+	})
+	sort.Slice(other.Addresses, func(i, j int) bool {
+		return other.Addresses[i].String() > other.Addresses[j].String()
+	})
+
+	if len(d.Addresses) != len(other.Addresses) || len(d.Tags) != len(other.Tags) {
+		return false
+	}
+
+	for i := range d.Addresses {
+		if !d.Addresses[i].Equal(other.Addresses[i]) {
 			return false
 		}
 	}
 
-	if len(a.Tags) != len(b.Tags) {
-		return false
-	}
-
-	for i := range a.Tags {
-		if a.Tags[i] != b.Tags[i] {
+	for i := range d.Tags {
+		if d.Tags[i] != other.Tags[i] {
 			return false
 		}
 	}

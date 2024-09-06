@@ -110,7 +110,7 @@ func (s *Server) matchAnswer(msg *dns.Msg, req *dns.Msg, ip net.IP) {
 			log.Printf("[DEBUG][%d] %2d | %18s | matched CIDR: %v", req.Id, secIdx, sec.From, matchedByCIDR)
 			if matchedByCIDR {
 				answer(sec, q)
-				continue
+				break
 			}
 
 			matchedByTS := s.matchesTS(req, sec, ip)
@@ -118,7 +118,7 @@ func (s *Server) matchAnswer(msg *dns.Msg, req *dns.Msg, ip net.IP) {
 
 			if matchedByTS {
 				answer(sec, q)
-				continue
+				break
 			}
 		}
 	}

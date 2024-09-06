@@ -112,7 +112,7 @@ func (c *Client) refresh(ctx context.Context) {
 		for _, a := range d.Addresses {
 			ip := net.ParseIP(a)
 			if ip == nil {
-				log.Printf("[WARN][tailscale] failed to parse IP address: %s", a[0])
+				log.Printf("[WARN][tailscale] failed to parse IP address: %s", a)
 				continue
 			}
 			addresses = append(addresses, ip)

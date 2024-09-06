@@ -17,6 +17,8 @@ import (
 type Interface interface {
 	// Run starts the client and refreshes the data from the TSTag service.
 	Run(ctx context.Context, refreshInterval time.Duration)
+	// Refresh refreshes the data from the tailscale.
+	Refresh(ctx context.Context) error
 	// GetTags returns the tags for the given device that is identified by the IP address.
 	GetTags(ip net.IP) (tags []string, err error)
 }
@@ -33,15 +35,20 @@ type Client struct {
 	Tailnet string
 	Token   string
 
-	devices []Device
-	mu      sync.RWMutex
+	devices  []Device
+	deviceMu sync.RWMutex
+
+	lastRefresh time.Time
+	refreshMu   sync.RWMutex
 }
 
 // Run starts the client and refreshes the data from the TSTag service.
 func (c *Client) Run(ctx context.Context, refreshInterval time.Duration) {
 	log.Printf("[INFO][tailscale] starting refresher, interval: %s", refreshInterval)
 
-	c.refresh(ctx)
+	if err := c.Refresh(ctx); err != nil {
+		log.Printf("[WARN][tailscale] failed to refresh devices for the first time: %v", err)
+	}
 
 	ticker := time.NewTicker(refreshInterval)
 	defer ticker.Stop()
@@ -51,15 +58,17 @@ func (c *Client) Run(ctx context.Context, refreshInterval time.Duration) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			c.refresh(ctx)
+			if err := c.Refresh(ctx); err != nil {
+				log.Printf("[ERROR][tailscale] failed to refresh devices: %v", err)
+			}
 		}
 	}
 }
 
 // GetTags returns the tags for the given device that is identified by the IP address.
 func (c *Client) GetTags(ip net.IP) (tags []string, err error) {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
+	c.deviceMu.RLock()
+	defer c.deviceMu.RUnlock()
 
 	for _, d := range c.devices {
 		for _, a := range d.Addresses {
@@ -72,25 +81,32 @@ func (c *Client) GetTags(ip net.IP) (tags []string, err error) {
 	return nil, errors.New("device not found")
 }
 
-func (c *Client) refresh(ctx context.Context) {
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
+// Refresh refreshes the data from the tailscale.
+func (c *Client) Refresh(ctx context.Context) error {
+	c.refreshMu.RLock()
+	if time.Since(c.lastRefresh) < 5*time.Second {
+		// do not refresh too often
+		c.refreshMu.RUnlock()
+		return nil
+	}
+	c.refreshMu.RUnlock()
+	c.refreshMu.Lock()
+	defer c.refreshMu.Unlock()
+	c.lastRefresh = time.Now()
 
 	log.Printf("[DEBUG][tailscale] refreshing devices")
 
 	url := fmt.Sprintf("https://api.tailscale.com/api/v2/tailnet/%s/devices", c.Tailnet)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, http.NoBody)
 	if err != nil {
-		log.Printf("[WARN][tailscale] failed to create request: %v", err)
-		return
+		return fmt.Errorf("create request: %w", err)
 	}
 
 	req.Header.Set("Authorization", "Bearer "+c.Token)
 
 	resp, err := c.Client.Do(req)
 	if err != nil {
-		log.Printf("[WARN][tailscale] failed to get devices: %v", err)
-		return
+		return fmt.Errorf("get devices: %w", err)
 	}
 
 	defer resp.Body.Close()
@@ -102,8 +118,7 @@ func (c *Client) refresh(ctx context.Context) {
 		} `json:"devices"`
 	}
 	if err = json.NewDecoder(resp.Body).Decode(&body); err != nil {
-		log.Printf("[WARN][tailscale] failed to decode response: %v", err)
-		return
+		return fmt.Errorf("decode response: %w", err)
 	}
 
 	devices := make([]Device, 0, len(body.Devices))
@@ -123,16 +138,17 @@ func (c *Client) refresh(ctx context.Context) {
 		})
 	}
 
-	c.mu.RLock()
+	c.deviceMu.RLock()
 	if !equal(c.devices, devices) {
 		log.Printf("[DEBUG][tailscale] updating devices, old: %d, new: %d", len(c.devices), len(devices))
-		c.mu.RUnlock()
-		c.mu.Lock()
+		c.deviceMu.RUnlock()
+		c.deviceMu.Lock()
 		c.devices = devices
-		c.mu.Unlock()
-		return
+		c.deviceMu.Unlock()
+		return nil
 	}
-	c.mu.RUnlock()
+	c.deviceMu.RUnlock()
+	return nil
 }
 
 func equal(a, b []Device) bool {

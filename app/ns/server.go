@@ -64,6 +64,24 @@ func (s *Server) handle(w dns.ResponseWriter, req *dns.Msg) {
 	msg := &dns.Msg{}
 	msg.SetReply(req)
 
+	if s.specialQuery(req) {
+		// on special queries, always return server
+		// failure, regardless of the operation result
+		msg = &dns.Msg{MsgHdr: dns.MsgHdr{
+			Id:                 req.Id,
+			Response:           true,
+			Opcode:             req.Opcode,
+			Authoritative:      true,
+			RecursionDesired:   req.RecursionDesired,
+			RecursionAvailable: true,
+		}}
+		msg.SetRcode(req, dns.RcodeNameError)
+		if err := w.WriteMsg(msg); err != nil {
+			log.Printf("[WARN][%d] failed to write message: %v", req.Id, err)
+		}
+		return
+	}
+
 	s.matchAnswer(msg, req, srcAddr.IP)
 
 	if len(msg.Answer) == 0 {
@@ -197,4 +215,23 @@ func (s *Server) SetConfig(cfg config.Config) {
 	defer s.mu.Unlock()
 
 	s.cfg = cfg
+}
+
+func (s *Server) specialQuery(req *dns.Msg) bool {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	for _, q := range req.Question {
+		if q.Name == "semior001.dnsit.refresh-tailscale." {
+			log.Printf("[INFO][%d] received special query to refresh tailscale", req.Id)
+			if s.Tailscale != nil {
+				if err := s.Tailscale.Refresh(ctx); err != nil {
+					log.Printf("[WARN][%d] failed to refresh tailscale: %v", req.Id, err)
+				}
+			}
+			return true
+		}
+	}
+
+	return false
 }

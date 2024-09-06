@@ -21,7 +21,11 @@ func (c Config) String() string {
 	result := &strings.Builder{}
 	_, _ = result.WriteString("{")
 	for idx, s := range c.Sections {
-		_, _ = fmt.Fprintf(result, "%s: %d", s.SectionConfig.From, len(s.Aliases))
+		_, _ = fmt.Fprintf(result, "%s|%d: %d",
+			s.SectionConfig.From,
+			len(s.SectionConfig.TSTag),
+			len(s.Aliases),
+		)
 		if idx < len(c.Sections)-1 {
 			_, _ = result.WriteString(", ")
 		}
@@ -44,26 +48,38 @@ type Alias struct {
 
 // SectionConfig represents the configuration of a section.
 type SectionConfig struct {
-	From *net.IPNet
+	From  *net.IPNet
+	TSTag map[string]struct{}
 }
 
 // UnmarshalYAML unmarshals a YAML node into a SectionConfig.
 func (s *SectionConfig) UnmarshalYAML(v *yaml.Node) error {
 	var raw struct {
-		From string `yaml:"from"`
+		From  string   `yaml:"from"`
+		TSTag []string `yaml:"tstag"`
 	}
 
 	if err := v.Decode(&raw); err != nil {
 		return fmt.Errorf("decode raw: %w", err)
 	}
 
-	_, ipNet, err := net.ParseCIDR(raw.From)
-	if err != nil {
-		return fmt.Errorf("parse CIDR: %w", err)
+	if raw.From != "" {
+		_, ipNet, err := net.ParseCIDR(raw.From)
+		if err != nil {
+			return fmt.Errorf("parse CIDR: %w", err)
+		}
+
+		ipNet.IP = ipNet.IP.To4()
+		s.From = ipNet
 	}
 
-	ipNet.IP = ipNet.IP.To4()
-	s.From = ipNet
+	if len(raw.TSTag) > 0 {
+		s.TSTag = make(map[string]struct{}, len(raw.TSTag))
+		for _, tag := range raw.TSTag {
+			s.TSTag[tag] = struct{}{}
+		}
+	}
+
 	return nil
 }
 
@@ -86,6 +102,7 @@ func Parse(file io.Reader) (result Config, err error) {
 
 			line = strings.TrimPrefix(line, "#!!")
 			yamlSectionBuf.WriteString(line)
+			yamlSectionBuf.WriteRune('\n')
 		case strings.HasPrefix(line, "#"): // comment
 			continue
 		case strings.TrimSpace(line) == "": // empty line

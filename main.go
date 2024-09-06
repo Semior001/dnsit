@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -16,6 +17,7 @@ import (
 
 	"github.com/Semior001/dnsit/app/config"
 	"github.com/Semior001/dnsit/app/ns"
+	"github.com/Semior001/dnsit/app/tailscale"
 	"github.com/hashicorp/logutils"
 	"github.com/jessevdk/go-flags"
 	"golang.org/x/sync/errgroup"
@@ -31,6 +33,10 @@ var opts struct {
 		Delay         time.Duration `long:"delay"          env:"DELAY"          description:"Delay before applying changes"        default:"10s"`
 		CheckInterval time.Duration `long:"check-interval" env:"CHECK_INTERVAL" description:"Interval to check for config changes" default:"3s"`
 	} `group:"config" namespace:"config" env-namespace:"CONFIG"`
+	Tailscale struct {
+		Tailnet string `long:"tailnet"        env:"TAILNET"        description:"Tailscale tailnet"`
+		Token   string `long:"token"          env:"TOKEN"          description:"Tailscale API token"`
+	} `group:"tailscale" namespace:"tailscale" env-namespace:"TAILSCALE"`
 
 	Log struct {
 		Path  string `long:"path"           env:"PATH"           description:"Log file path, empty for stdout"`
@@ -75,7 +81,19 @@ func main() {
 }
 
 func run(ctx context.Context) error {
-	srv := ns.NewServer(opts.Addr, opts.TTL, opts.Upstream)
+	srv := &ns.Server{
+		Addr:     opts.Addr,
+		Upstream: opts.Upstream,
+		TTL:      opts.TTL,
+	}
+
+	if opts.Tailscale.Tailnet != "" && opts.Tailscale.Token != "" {
+		srv.Tailscale = &tailscale.Client{
+			Client:  &http.Client{Timeout: 5 * time.Second},
+			Tailnet: opts.Tailscale.Tailnet,
+			Token:   opts.Tailscale.Token,
+		}
+	}
 
 	checker := &config.Checker{
 		FileName:      opts.Config.Path,

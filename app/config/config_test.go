@@ -30,7 +30,10 @@ func TestParse(t *testing.T) {
 				{IP: net.IPv4(100, 10, 10, 3).To4(), Hostnames: []string{"foo.bar."}},
 				{IP: net.IPv4(100, 8, 1, 1).To4(), Hostnames: []string{"bar.foo."}},
 			},
-			SectionConfig: SectionConfig{From: cidr(t, "100.10.10.1/32")},
+			SectionConfig: SectionConfig{
+				From:  cidr(t, "100.10.10.1/32"),
+				TSTag: map[string]struct{}{"foo": {}, "bar": {}},
+			},
 		},
 	}}
 

@@ -9,29 +9,22 @@ import (
 	"time"
 
 	"github.com/Semior001/dnsit/app/config"
+	"github.com/Semior001/dnsit/app/tailscale"
 	"github.com/miekg/dns"
 )
 
 // Server is a DNS server.
 type Server struct {
-	addr     string
-	upstream string
-	ttl      time.Duration
+	Addr      string
+	Upstream  string
+	TTL       time.Duration
+	Tailscale tailscale.Interface
 
 	cfg config.Config
 	mu  sync.RWMutex
 
 	dns *dns.Server
 	ucl *dns.Client
-}
-
-// NewServer creates a new DNS server.
-func NewServer(addr string, ttl time.Duration, upstream string) *Server {
-	return &Server{
-		addr:     addr,
-		upstream: upstream,
-		ttl:      ttl,
-	}
 }
 
 // Run starts the DNS server and blocks until the context is canceled.
@@ -44,15 +37,19 @@ func (s *Server) Run(ctx context.Context) error {
 		}
 	}()
 
+	if s.Tailscale != nil {
+		go s.Tailscale.Run(ctx, 5*time.Minute)
+	}
+
 	s.dns = &dns.Server{
-		Addr:    s.addr,
+		Addr:    s.Addr,
 		Net:     "udp",
 		Handler: dns.HandlerFunc(s.handle),
 	}
 
 	s.ucl = &dns.Client{Net: "udp"}
 
-	log.Printf("[INFO] starting server on %s", s.addr)
+	log.Printf("[INFO] starting server on %s", s.Addr)
 	return s.dns.ListenAndServe()
 }
 
@@ -86,31 +83,69 @@ func (s *Server) matchAnswer(msg *dns.Msg, req *dns.Msg, ip net.IP) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	for _, q := range req.Question {
-		log.Printf("[INFO][%d] query for %s from %s", req.Id, q.Name, ip)
-		for _, sec := range s.cfg.Sections {
-			if !sec.From.Contains(ip) {
+	answer := func(sec config.Section, q dns.Question) {
+		for _, alias := range sec.Aliases {
+			if found := matches(q.Name, alias.Hostnames); !found {
 				continue
 			}
 
-			for _, alias := range sec.Aliases {
-				if found := matches(q.Name, alias.Hostnames); !found {
-					continue
-				}
+			msg.Answer = append(msg.Answer, &dns.A{
+				A: alias.IP,
+				Hdr: dns.RR_Header{
+					Name:   q.Name,
+					Rrtype: dns.TypeA,
+					Class:  dns.ClassINET,
+					Ttl:    uint32(s.TTL.Seconds()),
+				},
+			})
 
-				msg.Answer = append(msg.Answer, &dns.A{
-					A: alias.IP,
-					Hdr: dns.RR_Header{
-						Name:   q.Name,
-						Rrtype: dns.TypeA,
-						Class:  dns.ClassINET,
-						Ttl:    uint32(s.ttl.Seconds()),
-					},
-				})
-				break
+			break
+		}
+	}
+
+	for _, q := range req.Question {
+		log.Printf("[INFO][%d] query for %s from %s", req.Id, q.Name, ip)
+		for secIdx, sec := range s.cfg.Sections {
+			matchedByCIDR := s.matchesCIDR(sec, ip)
+			log.Printf("[DEBUG][%d] %2d | matched CIDR: %v", req.Id, secIdx, matchedByCIDR)
+			if matchedByCIDR {
+				answer(sec, q)
+				continue
+			}
+
+			matchedByTS := s.matchesTS(req, sec, ip)
+			log.Printf("[DEBUG][%d] %2d | matched TSTG: %v", req.Id, secIdx, matchedByTS)
+
+			if matchedByTS {
+				answer(sec, q)
+				continue
 			}
 		}
 	}
+}
+
+func (s *Server) matchesTS(req *dns.Msg, sec config.Section, ip net.IP) bool {
+	if s.Tailscale == nil || len(sec.TSTag) == 0 {
+		return false
+	}
+
+	tags, err := s.Tailscale.GetTags(ip)
+	if err != nil {
+		log.Printf("[WARN][%d] failed to get tags of %s: %v", req.Id, ip, err)
+		return false
+	}
+
+	for _, tag := range tags {
+		if _, ok := sec.TSTag[tag]; ok {
+			return true
+		}
+	}
+
+	return false
+}
+
+func (s *Server) matchesCIDR(section config.Section, ip net.IP) bool {
+	return section.From != nil && section.From.Contains(ip)
 }
 
 func matches(name string, hostnames []string) (found bool) {
@@ -124,7 +159,7 @@ func matches(name string, hostnames []string) (found bool) {
 }
 
 func (s *Server) serveUpstream(w dns.ResponseWriter, req *dns.Msg) {
-	if s.upstream == "" {
+	if s.Upstream == "" {
 		log.Printf("[DEBUG][%d] no upstream server configured, returning server failure", req.Id)
 		msg := &dns.Msg{MsgHdr: dns.MsgHdr{
 			Id:                 req.Id,
@@ -141,7 +176,7 @@ func (s *Server) serveUpstream(w dns.ResponseWriter, req *dns.Msg) {
 		return
 	}
 
-	resp, _, err := s.ucl.Exchange(req, s.upstream)
+	resp, _, err := s.ucl.Exchange(req, s.Upstream)
 	if err != nil {
 		log.Printf("[WARN] failed to query upstream server: %v", err)
 		return

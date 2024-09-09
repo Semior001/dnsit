@@ -101,7 +101,7 @@ func (s *Server) matchAnswer(msg *dns.Msg, req *dns.Msg, ip net.IP) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	answer := func(sec config.Section, q dns.Question) {
+	answer := func(sec config.Section, q dns.Question) (found bool) {
 		for _, alias := range sec.Aliases {
 			if found := matches(q.Name, alias.Hostnames); !found {
 				continue
@@ -117,8 +117,10 @@ func (s *Server) matchAnswer(msg *dns.Msg, req *dns.Msg, ip net.IP) {
 				},
 			})
 
-			break
+			return true
 		}
+
+		return false
 	}
 
 	for _, q := range req.Question {
@@ -127,7 +129,9 @@ func (s *Server) matchAnswer(msg *dns.Msg, req *dns.Msg, ip net.IP) {
 			matchedByCIDR := s.matchesCIDR(sec, ip)
 			log.Printf("[DEBUG][%d] %2d | matched CIDR: %v", req.Id, secIdx, matchedByCIDR)
 			if matchedByCIDR {
-				answer(sec, q)
+				if found := answer(sec, q); !found {
+					continue
+				}
 				break
 			}
 
@@ -135,7 +139,9 @@ func (s *Server) matchAnswer(msg *dns.Msg, req *dns.Msg, ip net.IP) {
 			log.Printf("[DEBUG][%d] %2d | matched TSTG: %v", req.Id, secIdx, matchedByTS)
 
 			if matchedByTS {
-				answer(sec, q)
+				if found := answer(sec, q); !found {
+					continue
+				}
 				break
 			}
 		}

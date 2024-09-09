@@ -1,3 +1,5 @@
+// Package tailscale provides the interface and client
+// to interact with the tailscale API.
 package tailscale
 
 import (
@@ -85,7 +87,7 @@ func (c *Client) GetTags(ip net.IP) (tags []string, err error) {
 func (c *Client) Refresh(ctx context.Context) error {
 	if last := c.lastModified(); time.Since(last) < 5*time.Second {
 		// do not refresh too often 
-		log.Printf("[DEBUG] supressed refresh, when the last one was less than 5 sec ago: %s", last)
+		log.Printf("[DEBUG] suppressed refresh, when the last one was less than 5 sec ago: %s", last)
 		return nil
 	}
 

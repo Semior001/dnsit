@@ -34,10 +34,10 @@ var opts struct {
 		CheckInterval time.Duration `long:"check-interval" env:"CHECK_INTERVAL" description:"Interval to check for config changes" default:"3s"`
 	} `group:"config" namespace:"config" env-namespace:"CONFIG"`
 	Tailscale struct {
-		Tailnet string `long:"tailnet"        env:"TAILNET"        description:"Tailscale tailnet"`
-		Token   string `long:"token"          env:"TOKEN"          description:"Tailscale API token"`
+		Tailnet         string        `long:"tailnet"          env:"TAILNET"        description:"Tailscale tailnet"`
+		Token           string        `long:"token"            env:"TOKEN"          description:"Tailscale API token"`
+		RefreshInterval time.Duration `long:"refresh-interval" env:"REFRESH_INTERVAL" description:"Interval to refresh the TSTag data" default:"5m"`
 	} `group:"tailscale" namespace:"tailscale" env-namespace:"TAILSCALE"`
-
 	Log struct {
 		Path  string `long:"path"           env:"PATH"           description:"Log file path, empty for stdout"`
 		Debug bool   `long:"debug"          env:"DEBUG"          description:"Enable debug mode"`
@@ -88,11 +88,15 @@ func run(ctx context.Context) error {
 	}
 
 	if opts.Tailscale.Tailnet != "" && opts.Tailscale.Token != "" {
-		srv.Tailscale = &tailscale.Client{
+		tscl := &tailscale.Client{
 			Client:  &http.Client{Timeout: 5 * time.Second},
 			Tailnet: opts.Tailscale.Tailnet,
 			Token:   opts.Tailscale.Token,
 		}
+
+		srv.TagStore = tscl
+
+		go tscl.Run(ctx, opts.Tailscale.RefreshInterval)
 	}
 
 	checker := &config.Checker{

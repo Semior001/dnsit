@@ -9,16 +9,20 @@ import (
 	"time"
 
 	"github.com/Semior001/dnsit/app/config"
-	"github.com/Semior001/dnsit/app/tailscale"
 	"github.com/miekg/dns"
 )
 
+type tagStore interface {
+	GetTags(ip net.IP) (tags []string, err error)
+	Refresh(ctx context.Context) error
+}
+
 // Server is a DNS server.
 type Server struct {
-	Addr      string
-	Upstream  string
-	TTL       time.Duration
-	Tailscale tailscale.Interface
+	Addr     string
+	Upstream string
+	TTL      time.Duration
+	TagStore tagStore
 
 	cfg config.Config
 	mu  sync.RWMutex
@@ -36,10 +40,6 @@ func (s *Server) Run(ctx context.Context) error {
 			log.Printf("[ERROR] failed to shutdown server: %v", err)
 		}
 	}()
-
-	if s.Tailscale != nil {
-		go s.Tailscale.Run(ctx, 5*time.Minute)
-	}
 
 	s.dns = &dns.Server{
 		Addr:    s.Addr,
@@ -149,11 +149,11 @@ func (s *Server) matchAnswer(msg *dns.Msg, req *dns.Msg, ip net.IP) {
 }
 
 func (s *Server) matchesTS(req *dns.Msg, sec config.Section, ip net.IP) bool {
-	if s.Tailscale == nil || len(sec.TSTag) == 0 {
+	if s.TagStore == nil || len(sec.TSTag) == 0 {
 		return false
 	}
 
-	tags, err := s.Tailscale.GetTags(ip)
+	tags, err := s.TagStore.GetTags(ip)
 	if err != nil {
 		log.Printf("[WARN][%d] failed to get tags of %s: %v", req.Id, ip, err)
 		return false
@@ -230,8 +230,8 @@ func (s *Server) specialQuery(req *dns.Msg) bool {
 	for _, q := range req.Question {
 		if q.Name == "semior001.dnsit.refresh-tailscale." {
 			log.Printf("[INFO][%d] received special query to refresh tailscale", req.Id)
-			if s.Tailscale != nil {
-				if err := s.Tailscale.Refresh(ctx); err != nil {
+			if s.TagStore != nil {
+				if err := s.TagStore.Refresh(ctx); err != nil {
 					log.Printf("[WARN][%d] failed to refresh tailscale: %v", req.Id, err)
 				}
 			}

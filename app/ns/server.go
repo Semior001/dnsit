@@ -64,6 +64,7 @@ func (s *Server) handle(w dns.ResponseWriter, req *dns.Msg) {
 	msg := &dns.Msg{}
 	msg.SetReply(req)
 	msg.Authoritative = true
+	msg.RecursionAvailable = true // always available
 
 	if s.specialQuery(req) {
 		// on special queries, always return server

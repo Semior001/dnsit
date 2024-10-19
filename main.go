@@ -103,7 +103,6 @@ func run(ctx context.Context) error {
 		FileName:      opts.Config.Path,
 		CheckInterval: opts.Config.CheckInterval,
 		Delay:         opts.Config.Delay,
-		Decoder:       config.DecoderFunc(config.Parse),
 		UpdateFn:      srv.SetConfig,
 	}
 

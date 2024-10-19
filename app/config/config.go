@@ -40,6 +40,11 @@ type Section struct {
 	SectionConfig
 }
 
+// CIDRContains checks if the section contains the given IP address.
+func (s Section) CIDRContains(ip net.IP) bool {
+	return s.From != nil && s.From.Contains(ip)
+}
+
 // Alias represents an alias for an IP address.
 type Alias struct {
 	IP        net.IP
@@ -159,14 +164,3 @@ func filterOutComment(ls []string) []string {
 	}
 	return result
 }
-
-// Decoder is a configuration decoder.
-type Decoder interface {
-	Decode(io.Reader) (Config, error)
-}
-
-// DecoderFunc is an adapter to use an ordinary function as a Decoder.
-type DecoderFunc func(io.Reader) (Config, error)
-
-// Decode calls f(r).
-func (f DecoderFunc) Decode(r io.Reader) (Config, error) { return f(r) }

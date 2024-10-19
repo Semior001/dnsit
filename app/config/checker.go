@@ -13,7 +13,6 @@ type Checker struct {
 	FileName      string
 	CheckInterval time.Duration
 	Delay         time.Duration
-	Decoder       Decoder
 	UpdateFn      func(Config)
 }
 
@@ -79,7 +78,7 @@ func (d *Checker) parse() (Config, error) {
 		}
 	}()
 
-	cfg, err := d.Decoder.Decode(f)
+	cfg, err := Parse(f)
 	if err != nil {
 		return Config{}, fmt.Errorf("decode file: %w", err)
 	}

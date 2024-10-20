@@ -35,6 +35,11 @@ func logMiddleware(next dns.Handler) dns.Handler {
 		rr := &responseRecorder{ResponseWriter: w}
 		next.ServeDNS(rr, req)
 
+		if rr.msg == nil {
+			log.Printf("[WARN][%d] no response", req.Id)
+			return
+		}
+
 		log.Printf("[INFO][%d] responding with %d answers", req.Id, len(rr.msg.Answer))
 		log.Printf("[DEBUG][%d] response: %v", req.Id, rr.msg)
 	})
@@ -42,10 +47,10 @@ func logMiddleware(next dns.Handler) dns.Handler {
 
 type responseRecorder struct {
 	dns.ResponseWriter
-	msg dns.Msg
+	msg *dns.Msg
 }
 
 func (rr *responseRecorder) WriteMsg(msg *dns.Msg) error {
-	rr.msg = *msg
+	rr.msg = msg
 	return rr.ResponseWriter.WriteMsg(msg)
 }

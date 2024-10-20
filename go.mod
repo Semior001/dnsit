@@ -3,6 +3,7 @@ module github.com/Semior001/dnsit
 go 1.22.4
 
 require (
+	github.com/go-pkgz/expirable-cache/v2 v2.0.0
 	github.com/hashicorp/logutils v1.0.0
 	github.com/jessevdk/go-flags v1.6.1
 	github.com/miekg/dns v1.1.61

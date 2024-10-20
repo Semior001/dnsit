@@ -6,25 +6,20 @@ import (
 	"log"
 	"net"
 	"slices"
-	"strings"
 	"sync"
 	"time"
 
 	"github.com/Semior001/dnsit/app/config"
+	"github.com/Semior001/dnsit/app/tailscale"
 	"github.com/miekg/dns"
 )
-
-type tagStore interface {
-	GetTags(ip net.IP) (tags []string, err error)
-	Refresh(ctx context.Context) error
-}
 
 // Server is a DNS server.
 type Server struct {
 	Addr     string
 	Upstream string
 	TTL      time.Duration
-	TagStore tagStore
+	TagStore tailscale.Interface
 
 	cfg config.Config
 	mu  sync.RWMutex
@@ -39,7 +34,7 @@ func (s *Server) Run(ctx context.Context) error {
 		Addr: s.Addr,
 		Net:  "udp",
 		Handler: wrap(dns.HandlerFunc(s.serveUpstream),
-			loggingMiddleware,
+			logMiddleware,
 			s.handleSpecialQuery,
 			s.handleAuthored),
 	}
@@ -104,7 +99,7 @@ func (s *Server) handleAuthored(next dns.Handler) dns.Handler {
 		}
 
 		resp := s.answer(srcAddr.IP, req)
-		if len(resp) == 0 {
+		if len(resp) > 0 {
 			log.Printf("[DEBUG][%d] no answer found for %s", req.Id, srcAddr.IP)
 			next.ServeDNS(w, req)
 			return
@@ -122,39 +117,48 @@ func (s *Server) handleAuthored(next dns.Handler) dns.Handler {
 	})
 }
 
-func (s *Server) answer(src net.IP, req *dns.Msg) []dns.RR {
+func (s *Server) answer(src net.IP, req *dns.Msg) (result []dns.RR) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	var result []dns.RR
+	match := -1
 	for _, q := range req.Question {
 		log.Printf("[DEBUG][%d] querying for %s from %s", req.Id, q.Name, src)
-		for secIdx, sec := range s.cfg.Sections {
-			matchedByCIDR := sec.CIDRContains(src)
-			matchedByTS := s.matchesTS(req, sec, src)
 
-			if !matchedByCIDR && !matchedByTS {
+		for idx := range s.cfg.Sections {
+			if matchedByCIDR := s.cfg.Sections[idx].CIDRContains(src); matchedByCIDR {
+				match = idx
+				log.Printf("[DEBUG][%d] section %d matched by CIDR", req.Id, idx)
+				break
+			}
+
+			if matchedByTS := s.matchesTS(req, s.cfg.Sections[idx], src); matchedByTS {
+				match = idx
+				log.Printf("[DEBUG][%d] section %d matched by TS tag", req.Id, idx)
+				break
+			}
+		}
+
+		if match == -1 {
+			log.Printf("[DEBUG][%d] no section matched for %s", req.Id, src)
+			continue
+		}
+
+		for _, alias := range s.cfg.Sections[match].Aliases {
+			if found := slices.Contains(alias.Hostnames, q.Name); !found {
 				continue
 			}
 
-			log.Printf("[DEBUG][%d] section %d matched by CIDR: %t, by TS: %t",
-				req.Id, secIdx, matchedByCIDR, matchedByTS)
-
-			for _, alias := range sec.Aliases {
-				if found := slices.Contains(alias.Hostnames, q.Name); !found {
-					continue
-				}
-
-				ans := &dns.A{A: alias.IP, Hdr: dns.RR_Header{
-					Name:   q.Name,
-					Rrtype: dns.TypeA,
-					Class:  dns.ClassINET,
-					Ttl:    uint32(s.TTL.Seconds()),
-				}}
-				result = append(result, ans)
-			}
+			ans := &dns.A{A: alias.IP, Hdr: dns.RR_Header{
+				Name:   q.Name,
+				Rrtype: dns.TypeA,
+				Class:  dns.ClassINET,
+				Ttl:    uint32(s.TTL.Seconds()),
+			}}
+			result = append(result, ans)
 		}
 	}
+
 	return result
 }
 
@@ -215,33 +219,6 @@ func questionOfType(req *dns.Msg, typ uint16) bool {
 		}
 	}
 	return false
-}
-
-func wrap(handler dns.Handler, mws ...func(dns.Handler) dns.Handler) dns.Handler {
-	for i := range mws {
-		handler = mws[len(mws)-1-i](handler)
-	}
-	return handler
-}
-
-func loggingMiddleware(next dns.Handler) dns.Handler {
-	getIP := func(w dns.ResponseWriter) string {
-		if addr, ok := w.RemoteAddr().(*net.UDPAddr); ok {
-			return addr.IP.String()
-		}
-		return "unknown"
-	}
-
-	return dns.HandlerFunc(func(w dns.ResponseWriter, req *dns.Msg) {
-		var q []string
-		for _, qq := range req.Question {
-			q = append(q, qq.Name)
-		}
-		log.Printf("[INFO][%d] query for %v from %s",
-			req.Id, strings.Join(q, ","), getIP(w))
-		log.Printf("[DEBUG][%d] message: %v", req.Id, req)
-		next.ServeDNS(w, req)
-	})
 }
 
 func sendError(code int, w dns.ResponseWriter, req *dns.Msg) {

@@ -15,6 +15,8 @@ import (
 	"time"
 )
 
+//go:generate moq -out mock_tailscale.go . Interface
+
 // Interface is an interface that provides the information about the IP address
 // from the TSTag service.
 type Interface interface {

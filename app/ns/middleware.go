@@ -28,20 +28,19 @@ func logMiddleware(next dns.Handler) dns.Handler {
 		for _, qq := range req.Question {
 			q = append(q, qq.Name)
 		}
-		log.Printf("[INFO][%d] query for %v from %s",
-			req.Id, strings.Join(q, ","), getIP(w))
-		log.Printf("[DEBUG][%d] request: %v", req.Id, req)
 
 		rr := &responseRecorder{ResponseWriter: w}
 		next.ServeDNS(rr, req)
 
-		if rr.msg == nil {
-			log.Printf("[WARN][%d] no response", req.Id)
-			return
+		ans := -1
+		if rr.msg != nil {
+			ans = len(rr.msg.Answer)
 		}
 
-		log.Printf("[INFO][%d] responding with %d answers", req.Id, len(rr.msg.Answer))
-		log.Printf("[DEBUG][%d] response: %v", req.Id, rr.msg)
+		log.Printf("[INFO][%d] query %v from %s, responded with %d answers",
+			req.Id, strings.Join(q, ", "), getIP(w), ans)
+		log.Printf("[DEBUG][%d] request:\n%v", req.Id, req)
+		log.Printf("[DEBUG][%d] response:\n%v", req.Id, rr.msg)
 	})
 }
 

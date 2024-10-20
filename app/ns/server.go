@@ -99,7 +99,7 @@ func (s *Server) handleAuthored(next dns.Handler) dns.Handler {
 		}
 
 		resp := s.answer(srcAddr.IP, req)
-		if len(resp) > 0 {
+		if len(resp) == 0 {
 			log.Printf("[DEBUG][%d] no answer found for %s", req.Id, srcAddr.IP)
 			next.ServeDNS(w, req)
 			return

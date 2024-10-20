@@ -30,7 +30,22 @@ func logMiddleware(next dns.Handler) dns.Handler {
 		}
 		log.Printf("[INFO][%d] query for %v from %s",
 			req.Id, strings.Join(q, ","), getIP(w))
-		log.Printf("[DEBUG][%d] message: %v", req.Id, req)
-		next.ServeDNS(w, req)
+		log.Printf("[DEBUG][%d] request: %v", req.Id, req)
+
+		rr := &responseRecorder{ResponseWriter: w}
+		next.ServeDNS(rr, req)
+
+		log.Printf("[INFO][%d] responding with %d answers", req.Id, len(rr.msg.Answer))
+		log.Printf("[DEBUG][%d] response: %v", req.Id, rr.msg)
 	})
+}
+
+type responseRecorder struct {
+	dns.ResponseWriter
+	msg dns.Msg
+}
+
+func (rr *responseRecorder) WriteMsg(msg *dns.Msg) error {
+	rr.msg = *msg
+	return rr.ResponseWriter.WriteMsg(msg)
 }

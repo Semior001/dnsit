@@ -117,34 +117,12 @@ func (s *Server) handleAuthored(next dns.Handler) dns.Handler {
 	})
 }
 
-func (s *Server) answer(src net.IP, req *dns.Msg) (result []dns.RR) {
+func (s *Server) answer(src net.IP, req *dns.Msg) []dns.RR {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	match := -1
-	for _, q := range req.Question {
-		log.Printf("[DEBUG][%d] querying for %s from %s", req.Id, q.Name, src)
-
-		for idx := range s.cfg.Sections {
-			if matchedByCIDR := s.cfg.Sections[idx].CIDRContains(src); matchedByCIDR {
-				match = idx
-				log.Printf("[DEBUG][%d] section %d matched by CIDR", req.Id, idx)
-				break
-			}
-
-			if matchedByTS := s.matchesTS(req, s.cfg.Sections[idx], src); matchedByTS {
-				match = idx
-				log.Printf("[DEBUG][%d] section %d matched by TS tag", req.Id, idx)
-				break
-			}
-		}
-
-		if match == -1 {
-			log.Printf("[DEBUG][%d] no section matched for %s", req.Id, src)
-			continue
-		}
-
-		for _, alias := range s.cfg.Sections[match].Aliases {
+	seek := func(q dns.Question, aliases []config.Alias) (result []dns.RR) {
+		for _, alias := range aliases {
 			if found := slices.Contains(alias.Hostnames, q.Name); !found {
 				continue
 			}
@@ -157,9 +135,28 @@ func (s *Server) answer(src net.IP, req *dns.Msg) (result []dns.RR) {
 			}}
 			result = append(result, ans)
 		}
+
+		return result
 	}
 
-	return result
+	for _, q := range req.Question {
+		log.Printf("[DEBUG][%d] querying for %s from %s", req.Id, q.Name, src)
+
+		for idx := range s.cfg.Sections {
+			matchedByCIDR := s.cfg.Sections[idx].CIDRContains(src)
+			matchedByTS := s.matchesTS(req, s.cfg.Sections[idx], src)
+
+			if !matchedByCIDR && !matchedByTS {
+				continue
+			}
+
+			if ans := seek(q, s.cfg.Sections[idx].Aliases); len(ans) > 0 {
+				return ans
+			}
+		}
+	}
+
+	return nil
 }
 
 func (s *Server) handleSpecialQuery(next dns.Handler) dns.Handler {

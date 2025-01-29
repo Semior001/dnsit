@@ -34,6 +34,7 @@ var opts struct {
 		CheckInterval time.Duration `long:"check-interval" env:"CHECK_INTERVAL" description:"Interval to check for config changes" default:"3s"`
 	} `group:"config" namespace:"config" env-namespace:"CONFIG"`
 	Tailscale struct {
+		Timeout         time.Duration `long:"timeout"          env:"TIMEOUT"        description:"Tailscale API timeout" default:"5s"`
 		Tailnet         string        `long:"tailnet"          env:"TAILNET"        description:"Tailscale tailnet"`
 		Token           string        `long:"token"            env:"TOKEN"          description:"Tailscale API token"`
 		RefreshInterval time.Duration `long:"refresh-interval" env:"REFRESH_INTERVAL" description:"Interval to refresh the TSTag data" default:"5m"`
@@ -89,7 +90,7 @@ func run(ctx context.Context) error {
 
 	if opts.Tailscale.Tailnet != "" && opts.Tailscale.Token != "" {
 		tscl := &tailscale.Client{
-			Client:  &http.Client{Timeout: 5 * time.Second},
+			Client:  &http.Client{Timeout: opts.Tailscale.Timeout},
 			Tailnet: opts.Tailscale.Tailnet,
 			Token:   opts.Tailscale.Token,
 		}

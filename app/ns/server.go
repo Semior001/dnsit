@@ -14,12 +14,26 @@ import (
 	"github.com/miekg/dns"
 )
 
+// Timeouts is a collection of various the DNS timeouts.
+type Timeouts struct {
+	Read     time.Duration `long:"read"  env:"READ"  description:"Read timeout"  default:"2s"`
+	Write    time.Duration `long:"write" env:"WRITE" description:"Write timeout" default:"2s"`
+	Idle     time.Duration `long:"idle"  env:"IDLE"  description:"Idle timeout"  default:"8s"`
+	Upstream struct {
+		Read    time.Duration `long:"read"    env:"READ"    description:"Read timeout"    default:"2s"`
+		Write   time.Duration `long:"write"   env:"WRITE"   description:"Write timeout"   default:"2s"`
+		Dial    time.Duration `long:"dial"    env:"DIAL"    description:"Dial timeout"    default:"2s"`
+		Request time.Duration `long:"request" env:"REQUEST" description:"Request timeout"`
+	} `group:"upstream" namespace:"upstream"`
+}
+
 // Server is a DNS server.
 type Server struct {
 	Addr     string
 	Upstream string
 	TTL      time.Duration
 	TagStore tailscale.Interface
+	Timeouts Timeouts
 
 	cfg config.Config
 	mu  sync.RWMutex
@@ -37,8 +51,17 @@ func (s *Server) Run(ctx context.Context) error {
 			logMiddleware,
 			s.handleSpecialQuery,
 			s.handleAuthored),
+		ReadTimeout:  s.Timeouts.Read,
+		WriteTimeout: s.Timeouts.Write,
+		IdleTimeout:  func() time.Duration { return s.Timeouts.Idle },
 	}
-	s.ucl = &dns.Client{Net: "udp"}
+	s.ucl = &dns.Client{
+		Net:          "udp",
+		Timeout:      s.Timeouts.Upstream.Request,
+		DialTimeout:  s.Timeouts.Upstream.Dial,
+		ReadTimeout:  s.Timeouts.Upstream.Read,
+		WriteTimeout: s.Timeouts.Upstream.Write,
+	}
 
 	go func() {
 		<-ctx.Done()

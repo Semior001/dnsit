@@ -28,6 +28,7 @@ var opts struct {
 	Addr     string        `long:"addr"           env:"ADDR"           description:"Address to listen on"                 default:":53"`
 	Upstream string        `long:"upstream"       env:"UPSTREAM"       description:"Upstream DNS server address"`
 	TTL      time.Duration `long:"ttl"            env:"TTL"            description:"TTL for DNS records"                  default:"5m"`
+	Timeouts ns.Timeouts   `group:"timeouts" namespace:"timeouts" env-namespace:"TIMEOUTS"`
 	Config   struct {
 		Path          string        `long:"path"           env:"PATH"           description:"Path to the configuration file"       required:"true"`
 		Delay         time.Duration `long:"delay"          env:"DELAY"          description:"Delay before applying changes"        default:"10s"`
@@ -86,6 +87,7 @@ func run(ctx context.Context) error {
 		Addr:     opts.Addr,
 		Upstream: opts.Upstream,
 		TTL:      opts.TTL,
+		Timeouts: opts.Timeouts,
 	}
 
 	if opts.Tailscale.Tailnet != "" && opts.Tailscale.Token != "" {

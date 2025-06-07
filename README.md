@@ -1,3 +1,6 @@
+# project status
+This project is unmaintained and archived.
+
 # dnsit
 simple as that dns server, accepts /etc/hosts like config for resolving A records
 
@@ -66,6 +69,3 @@ and `example.com` and `blah.abacaba.com` resolve to `100.10.10.2` and `100.10.10
 The third section with `#!!tstag` directive will make `example.com` resolve to the localhost IP address only for clients with `foo` or `bar` tag, tags are received from the Tailscale API.
 
 You can invoke a special query `nslookup semior001.dnsit.refresh-tailscale` to force the server to refresh the tags from the Tailscale API.
-
-## project status
-This project is in a very early stage of development, so it may not work as expected. Until v1 is released, the API may change at any time.
